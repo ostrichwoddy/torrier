@@ -1,27 +1,18 @@
 #include "torrier.h"
 
 
-int main(int argc, char *argv[])
+int connect(int s2, const struct sockaddr *sock2, socklen_t addrlen)
 {
-    char *host;
-    int port;
-    
     int s;
     struct sockaddr_in sock;
     Req *req;
     Res *res;
     char buffer[res_size];
     int success;
+    char tmp[512];
+    int (*original_connect)(int, const struct sockaddr*, socklen_t);
 
-    if (argc < 3)
-    {
-        fprintf(stderr, "Usage: %s <host> <port>\n", argv[0]);
-        return 1;
-    }
-
-    host = argv[1];
-    port = atoi(argv[2]);
-
+    original_connect = dlsym(RTLD_NEXT, "connect");
     s = socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0)
     {
@@ -33,14 +24,14 @@ int main(int argc, char *argv[])
     sock.sin_port = htons(PROXYPORT);
     sock.sin_addr.s_addr = inet_addr(PROXY);
 
-    if (connect(s, (struct sockaddr *)&sock, sizeof(sock)))
+    if (original_connect(s, (struct sockaddr *)&sock, sizeof(sock)))
     {
         perror("Connect");
         return 1;
     }
     printf("Proxy connection has been established successfully\n");
     
-    req = request(host, port);
+    req = request((struct sockaddr_in *)sock2);
     if (req == NULL)
     {
         perror("Request");
@@ -67,14 +58,14 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("Successfully connected through the proxy to %s:%d\n", host, port);    
-    close(s);
+    printf("Successfully connected through the proxy\n");   
+    dup2(s, s2); 
     free(req);
-
     return 0;
 }
 
-Req *request(const char *dst_ip, const int dst_port)
+
+Req *request(struct sockaddr_in * sock2)
 {
     Req *req;
     
@@ -84,8 +75,8 @@ Req *request(const char *dst_ip, const int dst_port)
     
     req->vn = 4;
     req->cd = 1;
-    req->dst_port = htons(dst_port);
-    req->dst_ip = inet_addr(dst_ip);
+    req->dst_port = sock2->sin_port;
+    req->dst_ip = sock2->sin_addr.s_addr;
     strncpy((char *)req->userid, USERID, 8);
 
     return req;
